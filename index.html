@@ -102,6 +102,7 @@ canvas{display:block}
     <div class="rb"><span class="ri">&#x1F465;</span><span class="rv" id="r-pop">0</span><span style="color:#666;font-size:9px">/</span><span class="rv" id="r-cap">0</span></div>
     <div class="rb"><span class="ri">&#x1F4C5;</span><span class="rv" id="r-month">1</span></div>
     <div class="rb" title="Reproduction rate"><span class="ri">&#x1F476;</span><span class="rv" id="r-repro">--</span></div>
+    <div class="rb" title="Village Morale"><span class="ri">&#x1F603;</span><span class="rv" id="r-morale">50</span></div>
   </div>
   <div class="res-row">
     <div class="rb"><span class="ri">&#x1F33E;</span><span class="rv" id="r-food">40</span></div>
@@ -155,7 +156,7 @@ let dragStart=null,camDragStart=null;
 let R={coin:500,wood:50,stone:0,clay:0,food:40,water:30,fish:0,berries:0,meat:0,vegetables:0,fruit:0,eggs:0,milk:0,cheese:0};
 
 // ══ STATE ══
-let S={month:1,pop:0,housing:0,san:5,waterQ:20,disease:40,od:60,helm:50,deaths:0,phase:0};
+let S={month:1,pop:0,housing:0,san:5,waterQ:20,disease:40,od:60,helm:50,deaths:0,phase:0,morale:50,famineMonths:0};
 let buildings=[],huts=[],trees=[],villagers=[],odZones=[],riverPts=[];
 let rocks=[],clouds=[],flowers=[],paths=[],fishPts=[];
 let mountains=[],lakes=[],denseForests=[],tradeRoad=[],berryBushes=[];
@@ -167,6 +168,27 @@ let festivalTimer=0,festivalBirthBoost=0; // festival state
 let bloodParticles=[]; // {x,y,age,speed,dx} blood flowing down river
 let animals=[]; // {type,x,y,tx,ty,speed,hp,state,timer,sz}
 let msgs=[],eventQueue=[];
+let caravans=[]; // {state,timer,returnIn,ox,oy}
+
+// ══ NAMES ══
+const NAMES=['Amara','Bakari','Chidi','Dalila','Emeka','Fahari','Gamba','Hasina','Idris','Jelani','Kamau','Leilani','Makena','Nadia','Obinna','Pendo','Rafiki','Salma','Tariq','Uche','Vida','Wangari','Xola','Yara','Zara','Aba','Baraka','Chiamaka','Deka','Eze','Fatuma','Girma','Hawa','Ikenna','Jua','Kenji','Lulu','Mwamba','Nkechi','Osei','Pili','Rudo','Simba','Temi','Uma'];
+
+// ══ AUDIO ══
+let audioCtx=null;
+function getAudio(){if(!audioCtx)try{audioCtx=new(window.AudioContext||window.webkitAudioContext)();}catch(e){}return audioCtx;}
+function playTone(freq,type,dur,vol,delay){
+  try{const ctx=getAudio();if(!ctx)return;
+  const osc=ctx.createOscillator(),gain=ctx.createGain();
+  osc.connect(gain);gain.connect(ctx.destination);
+  osc.type=type||'sine';osc.frequency.setValueAtTime(freq,ctx.currentTime+(delay||0));
+  gain.gain.setValueAtTime(vol||0.12,ctx.currentTime+(delay||0));
+  gain.gain.exponentialRampToValueAtTime(0.001,ctx.currentTime+(delay||0)+dur);
+  osc.start(ctx.currentTime+(delay||0));osc.stop(ctx.currentTime+(delay||0)+dur+0.05);}catch(e){}
+}
+function playBirthChime(){playTone(880,'sine',0.4,0.1);playTone(1100,'sine',0.3,0.08,0.15);playTone(1320,'sine',0.25,0.06,0.28);}
+function playRaidAlarm(){for(let i=0;i<4;i++){playTone(300+i*60,'sawtooth',0.3,0.18,i*0.35);playTone(560+i*60,'sawtooth',0.25,0.12,i*0.35+0.18);}}
+function playFestivalDrum(){for(let i=0;i<6;i++){playTone(80,'triangle',0.15,0.22,i*0.28);if(i%2===1)playTone(150,'triangle',0.1,0.12,i*0.28+0.1);}}
+function playCaravanSound(){playTone(440,'sine',0.2,0.1);playTone(550,'sine',0.2,0.1,0.2);playTone(660,'sine',0.3,0.1,0.4);}
 
 // ══ BUILDING DEFS ══
 // wasteCap: how much waste a treatment site can hold per level
@@ -445,7 +467,15 @@ function updateAnimals(){
         a.x+=dx/d*a.speed*speed*2;a.y+=dy/d*a.speed*speed*2;flee=true;break;
       }}
       if(!flee){
-        if(a.timer>200+Math.random()*200){a.timer=0;a.tx=a.x+(Math.random()-0.5)*0.08;a.ty=a.y+(Math.random()-0.5)*0.06;}
+        if(a.timer>200+Math.random()*200){
+          a.timer=0;
+          // Forest ecology: 65% chance to wander toward nearest dense forest
+          if(Math.random()<0.65&&denseForests.length>0){
+            const ndf=denseForests.reduce((best,df)=>dist(df,a)<dist(best,a)?df:best);
+            const dx=ndf.x-a.x,dy=ndf.y-a.y,dd=Math.hypot(dx,dy)||0.001;
+            a.tx=a.x+dx/dd*0.06+((Math.random()-0.5)*0.02);a.ty=a.y+dy/dd*0.04+((Math.random()-0.5)*0.02);
+          }else{a.tx=a.x+(Math.random()-0.5)*0.08;a.ty=a.y+(Math.random()-0.5)*0.06;}
+        }
         const d=dist(a,{x:a.tx,y:a.ty});
         if(d>0.003){a.x+=(a.tx-a.x)/d*a.speed*speed;a.y+=(a.ty-a.y)/d*a.speed*speed;}
       }
@@ -459,7 +489,14 @@ function updateAnimals(){
       }}
       if(!flee){
         const wt=a.type==='chicken'?100:150;
-        if(a.timer>wt+Math.random()*wt){a.timer=0;const r=a.type==='chicken'?0.03:0.06;a.tx=a.x+(Math.random()-0.5)*r;a.ty=a.y+(Math.random()-0.5)*r;}
+        if(a.timer>wt+Math.random()*wt){
+          a.timer=0;
+          if(Math.random()<0.65&&denseForests.length>0&&a.type!=='chicken'){
+            const ndf=denseForests.reduce((best,df)=>dist(df,a)<dist(best,a)?df:best);
+            const dx=ndf.x-a.x,dy=ndf.y-a.y,dd=Math.hypot(dx,dy)||0.001;
+            const r=0.05;a.tx=a.x+dx/dd*r;a.ty=a.y+dy/dd*r;
+          }else{const r=a.type==='chicken'?0.03:0.06;a.tx=a.x+(Math.random()-0.5)*r;a.ty=a.y+(Math.random()-0.5)*r;}
+        }
         const d=dist(a,{x:a.tx,y:a.ty});
         if(d>0.002){a.x+=(a.tx-a.x)/d*a.speed*speed;a.y+=(a.ty-a.y)/d*a.speed*speed;}
       }
@@ -493,8 +530,9 @@ function updateAnimals(){
       }
       else if(a.state==='prowl'){
         // Hunt nearest villager at edge of village
+        const effectiveHuntR=a.huntRadius*(1+(1-getDayFactor())*0.6);
         let target=null,nd=Infinity;
-        for(const v of villagers){const d=dist(a,v);if(d<a.huntRadius&&d<nd){nd=d;target=v;}}
+        for(const v of villagers){const d=dist(a,v);if(d<effectiveHuntR&&d<nd){nd=d;target=v;}}
         if(target){
           a.state='hunt';a.tx=target.x;a.ty=target.y;a._prey=target;
         }else{
@@ -626,18 +664,25 @@ function updateAnimals(){
     bp.y+=Math.sin(tick*0.1+bp.x*200)*0.00003*speed;
   }
 
-  // Respawn animals occasionally
-  if(tick%2000<speed&&animals.filter(a=>a.type==='antelope').length<3){
-    const a=Math.random()*Math.PI*2,d=0.2;
-    animals.push({type:'antelope',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00045,hp:30,state:'wander',timer:0,sz:0.0056,col:'#c08040',fleeRadius:0.05});
+  // Respawn animals occasionally — scaled by forest health
+  const forestH=getForestHealth();
+  if(tick%2000<speed&&animals.filter(a=>a.type==='antelope').length<3&&Math.random()<(forestH+0.1)){
+    let sx,sy;
+    if(denseForests.length>0&&Math.random()<0.6){const df=denseForests[Math.floor(Math.random()*denseForests.length)];const ra=Math.random()*Math.PI*2;sx=df.x+Math.cos(ra)*df.r;sy=df.y+Math.sin(ra)*df.r;}
+    else{const a=Math.random()*Math.PI*2,d=0.2;sx=0.5+Math.cos(a)*d;sy=0.5+Math.sin(a)*d;}
+    animals.push({type:'antelope',x:sx,y:sy,tx:0,ty:0,speed:0.00045,hp:30,state:'wander',timer:0,sz:0.0056,col:'#c08040',fleeRadius:0.05});
   }
-  if(tick%1500<speed&&animals.filter(a=>a.type==='rabbit').length<3){
-    const a=Math.random()*Math.PI*2,d=0.1+Math.random()*0.15;
-    animals.push({type:'rabbit',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0005,hp:10,state:'wander',timer:0,sz:0.0035,col:'#a08060',fleeRadius:0.04});
+  if(tick%1500<speed&&animals.filter(a=>a.type==='rabbit').length<3&&Math.random()<(forestH+0.1)){
+    let sx,sy;
+    if(denseForests.length>0&&Math.random()<0.6){const df=denseForests[Math.floor(Math.random()*denseForests.length)];const ra=Math.random()*Math.PI*2;sx=df.x+Math.cos(ra)*df.r*0.7;sy=df.y+Math.sin(ra)*df.r*0.7;}
+    else{const a=Math.random()*Math.PI*2,d=0.1+Math.random()*0.15;sx=0.5+Math.cos(a)*d;sy=0.5+Math.sin(a)*d;}
+    animals.push({type:'rabbit',x:sx,y:sy,tx:0,ty:0,speed:0.0005,hp:10,state:'wander',timer:0,sz:0.0035,col:'#a08060',fleeRadius:0.04});
   }
-  if(tick%2500<speed&&animals.filter(a=>a.type==='ostrich').length<2){
-    const a=Math.random()*Math.PI*2,d=0.15+Math.random()*0.2;
-    animals.push({type:'ostrich',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00055,hp:20,state:'wander',timer:0,sz:0.007,col:'#3a3a3a',fleeRadius:0.06});
+  if(tick%2500<speed&&animals.filter(a=>a.type==='ostrich').length<2&&Math.random()<(forestH+0.1)){
+    let sx,sy;
+    if(denseForests.length>0&&Math.random()<0.5){const df=denseForests[Math.floor(Math.random()*denseForests.length)];const ra=Math.random()*Math.PI*2;sx=df.x+Math.cos(ra)*(df.r+0.02);sy=df.y+Math.sin(ra)*(df.r+0.02);}
+    else{const a=Math.random()*Math.PI*2,d=0.15+Math.random()*0.2;sx=0.5+Math.cos(a)*d;sy=0.5+Math.sin(a)*d;}
+    animals.push({type:'ostrich',x:sx,y:sy,tx:0,ty:0,speed:0.00055,hp:20,state:'wander',timer:0,sz:0.007,col:'#3a3a3a',fleeRadius:0.06});
   }
   if(tick%1800<speed&&animals.filter(a=>a.type==='chicken').length<3){
     const a=Math.random()*Math.PI*2,d=0.05+Math.random()*0.1;
@@ -743,7 +788,11 @@ function spawnVillager(){
     walkFrame:0,dir:1,idleTimer:0,sick:false,
     edu:0, // education 0-100
     prof:null,dietDiv:0,
-    home:h
+    home:h,
+    name:NAMES[Math.floor(Math.random()*NAMES.length)],
+    age:isChild?5+Math.random()*10:16+Math.random()*20,
+    maxAge:55+Math.random()*25,
+    skill:0
   });
 }
 
@@ -752,6 +801,7 @@ function spawnVillager(){
 cv.addEventListener('contextmenu',e=>e.preventDefault());
 
 cv.addEventListener('mousedown',e=>{
+  getAudio(); // unlock AudioContext on first interaction
   if(e.button===2||e.button===1)return;
   const w=fromScreen(e.clientX,e.clientY);
 
@@ -948,6 +998,7 @@ cv.addEventListener('mousemove',e=>{
       if(b.type==='latrine'&&b.built>=1)extra=' Waste:'+(b.waste||0)+'/'+(bd.latrineWasteCap||20)*lv;
       if(['compost','biogas','treatment'].includes(b.type)&&b.built>=1)extra=' Stored:'+(b.wasteStored||0)+'/'+(bd.wasteCap||15)*lv;
       tip=`${bd.nm} Lv${lv}${extra}${bd.maxLv>1&&lv<bd.maxLv?' [upgrade]':''} ${b.built<1?'('+Math.round(b.built*100)+'%)':''}`;break;}}
+    if(!tip)for(const v of villagers){if(dist(v,w)<0.012){tip=(v.name||'Villager')+' | Age:'+Math.floor(v.age||0)+' | '+(v.prof?PROF_NAMES[v.prof]:(v.isChild?'Child':'Unassigned'))+' | Skill:'+(v.skill||0).toFixed(0);break;}}
     if(!tip)for(const a of animals){if(dist(a,w)<0.015){tip=a.type.charAt(0).toUpperCase()+a.type.slice(1);break;}}
     if(!tip)for(const tr of traders){if(dist(tr,w)<0.02){const k=(tr.kind||'trader');tip=k.charAt(0).toUpperCase()+k.slice(1)+' ('+tr.state+') — Trade score: '+getTradeScore();break;}}
     if(!tip)if(nearRiver(w.x,w.y,0.02))tip='River (click with villager to fetch water)';
@@ -1044,10 +1095,37 @@ window.upgradeBuilding=function(){
 };
 
 // ══ VILLAGER AI ══
+function getDayFactor(){
+  const dayLen=3600;
+  const phase=tick%dayLen;
+  if(phase<300)return phase/300;
+  if(phase<1800)return 1.0;
+  if(phase<2100)return 1-(phase-1800)/300;
+  return 0.0;
+}
+
+function getSanitationPopCap(){
+  const lats=buildings.filter(b=>b.type==='latrine'&&b.built>=1);
+  const latCap=lats.reduce((s,b)=>s+(b.level||1)*8,0);
+  return Math.min(S.housing,latCap>0?latCap:8);
+}
+
+function getForestHealth(){
+  if(!denseForests.length)return 1;
+  const denseTrees=trees.filter(t=>t.dense&&t.wood>0).length;
+  const totalDense=denseForests.reduce((s,df)=>s+df.trees,0);
+  return totalDense>0?Math.min(1,denseTrees/totalDense):0;
+}
+
 function updateVillagers(){
   for(const v of villagers){
     if(v.hp<=0)continue;
     v.walkFrame+=speed*0.15;
+
+    // Age progression
+    v.age=(v.age||0)+speed/(600*12);
+    if(v.isChild&&v.age>=16){v.isChild=false;v.sz=0.006;msg((v.name||'A child')+' has grown up!','good');}
+    if(v.age>(v.maxAge||70)){v.hp-=0.05*speed;}
 
     // Hunger / thirst decay (slow — roughly 1 month to drain)
     v.hunger-=0.003*speed;v.thirst-=0.004*speed;
@@ -1110,9 +1188,12 @@ function updateVillagers(){
           continue;
         }
         v.target.chopping=true;
-        if(v.taskTimer>25){
+        const chopThresh=Math.max(10,25*(1-(v.skill||0)/150));
+        if(v.taskTimer>chopThresh){
           v.taskTimer=0;v.target.wood--;v.carryAmt++;v.carrying='wood';
-          if(v.carryAmt>=4||v.target.wood<=0){
+          v.skill=Math.min(100,(v.skill||0)+0.3);
+          const carryMax=4+Math.floor((v.skill||0)/34);
+          if(v.carryAmt>=carryMax||v.target.wood<=0){
             v.task='return';v.tx=0.5;v.ty=0.5;v.target.chopping=false;
           }
         }
@@ -1125,8 +1206,10 @@ function updateVillagers(){
           continue;
         }
         v.target.mining=true;
-        if(v.taskTimer>30){
+        const mineThresh=Math.max(10,30*(1-(v.skill||0)/150));
+        if(v.taskTimer>mineThresh){
           v.taskTimer=0;v.target.stone--;v.carryAmt++;v.carrying='stone';
+          v.skill=Math.min(100,(v.skill||0)+0.3);
           if(v.carryAmt>=3||v.target.stone<=0){v.task='return';v.tx=0.5;v.ty=0.5;v.target.mining=false;}
         }
       }
@@ -1138,9 +1221,12 @@ function updateVillagers(){
           continue;
         }
         v.target.mining=true;
-        if(v.taskTimer>20){
+        const clayThresh=Math.max(10,20*(1-(v.skill||0)/150));
+        if(v.taskTimer>clayThresh){
           v.taskTimer=0;v.target.clay--;v.carryAmt++;v.carrying='clay';
-          if(v.carryAmt>=4||v.target.clay<=0){v.task='return';v.tx=0.5;v.ty=0.5;v.target.mining=false;}
+          v.skill=Math.min(100,(v.skill||0)+0.3);
+          const carryMax=4+Math.floor((v.skill||0)/34);
+          if(v.carryAmt>=carryMax||v.target.clay<=0){v.task='return';v.tx=0.5;v.ty=0.5;v.target.mining=false;}
         }
       }
       else if(v.task==='workclay'&&v.target){
@@ -1163,16 +1249,20 @@ function updateVillagers(){
       }
       else if(v.task==='fetchwater'){
         if(R.water>=getStorageCap('water')){v.task='idle';v.target=null;msg('Water storage full! Build a Reservoir for more capacity.','warn');continue;}
-        if(v.taskTimer>15){
+        const fwThresh=Math.max(10,15*(1-(v.skill||0)/150));
+        if(v.taskTimer>fwThresh){
           v.taskTimer=0;v.carrying='water';v.carryAmt=3;
+          v.skill=Math.min(100,(v.skill||0)+0.3);
           v.task='return';v.tx=0.5;v.ty=0.5;
         }
       }
       else if(v.task==='well'&&v.target){
         if(v.target.built<1){v.task='idle';continue;}
         if(R.water>=getStorageCap('water')){v.task='idle';v.target=null;msg('Water storage full! Build a Reservoir for more capacity.','warn');continue;}
-        if(v.taskTimer>12){
+        const wellThresh=Math.max(10,12*(1-(v.skill||0)/150));
+        if(v.taskTimer>wellThresh){
           v.taskTimer=0;v.carrying='water';v.carryAmt=5;
+          v.skill=Math.min(100,(v.skill||0)+0.3);
           v.task='return';v.tx=0.5;v.ty=0.5;
         }
       }
@@ -1180,8 +1270,10 @@ function updateVillagers(){
         if(v.target.built<1){v.task='idle';continue;}
         if(R.fish>=getStorageCap('fish')){v.task='idle';v.target=null;msg('Fish storage full!','warn');continue;}
         const fishLv=v.target.level||1;
-        if(v.taskTimer>18){
+        const fishThresh=Math.max(10,18*(1-(v.skill||0)/150));
+        if(v.taskTimer>fishThresh){
           v.taskTimer=0;v.carrying='fish';v.carryAmt=2+fishLv+((v.edu||0)>40?1:0);
+          v.skill=Math.min(100,(v.skill||0)+0.3);
           v.task='return';v.tx=0.5;v.ty=0.5;
         }
       }
@@ -1204,8 +1296,10 @@ function updateVillagers(){
         // Vegfarm and orchard scale with level
         if(ftype==='vegfarm'){farmYield=2+farmLv+((v.edu||0)>40?1:0);}
         if(ftype==='orchard'){farmYield=2+farmLv;}
-        if(v.taskTimer>20){
+        const farmThresh=Math.max(10,20*(1-(v.skill||0)/150));
+        if(v.taskTimer>farmThresh){
           v.taskTimer=0;v.carrying=produce;v.carryAmt=farmYield;
+          v.skill=Math.min(100,(v.skill||0)+0.3);
           if(hasRawWaste&&!hasCompost&&ftype!=='chickencoop'){S.disease=Math.min(100,S.disease+0.5);S.helm=Math.min(100,S.helm+0.3);}
           v.task='return';v.tx=0.5;v.ty=0.5;
         }
@@ -1253,10 +1347,12 @@ function updateVillagers(){
           v.task='idle';v.target=null;
           continue;
         }
-        if(v.taskTimer>22){
+        const gatherThresh=Math.max(10,22*(1-(v.skill||0)/150));
+        if(v.taskTimer>gatherThresh){
           v.taskTimer=0;
           const amt=Math.min(bush.berries,2+((v.edu||0)>40?1:0));
           bush.berries-=amt;v.carrying='berries';v.carryAmt=amt;
+          v.skill=Math.min(100,(v.skill||0)+0.3);
           msg('+'+ amt+' '+(bush.type==='mushroom'?'mushrooms':'berries')+(nearLion?' (lion nearby!)':''),'info');
           v.task='return';v.tx=0.5;v.ty=0.5;
         }
@@ -1441,6 +1537,11 @@ function updateVillagers(){
       else if(v.task==='move'){v.task='idle';}
       else if(v.task==='idle'){
         v.idleTimer+=speed;
+        // Night: villagers without profession drift home
+        if(!v.prof&&getDayFactor()<0.3&&v.idleTimer>20){
+          v.idleTimer=0;
+          v.tx=v.home.x+(Math.random()-0.5)*0.005;v.ty=v.home.y+(Math.random()-0.5)*0.004;
+        }
         // Profession auto-seek: try to resume work every ~100 ticks
         if(v.prof&&v.idleTimer>60){
           v.idleTimer=0;
@@ -1504,9 +1605,15 @@ function updateVillagers(){
           v.tx=v.home.x+(Math.random()-0.5)*0.02;v.ty=v.home.y+(Math.random()-0.5)*0.015;
         }else if(v.idleTimer>80){
           v.idleTimer=0;
-          // Wander near home
-          v.tx=v.home.x+(Math.random()-0.5)*0.02;
-          v.ty=v.home.y+(Math.random()-0.5)*0.015;
+          if(!v.prof){
+            // No profession — gather at the Job Square
+            v.tx=JOB_SQ.x+(Math.random()-0.5)*0.02;
+            v.ty=JOB_SQ.y+(Math.random()-0.5)*0.015;
+          }else{
+            // Has a profession but nothing to do — wander near home
+            v.tx=v.home.x+(Math.random()-0.5)*0.02;
+            v.ty=v.home.y+(Math.random()-0.5)*0.015;
+          }
         }
       }
     }
@@ -1728,6 +1835,24 @@ function advanceMonth(){
   const foodWorkers=villagers.filter(v=>['farm','fish','hunt','gather','makecheese'].includes(v.task)).length;
   const foodCapacity=foodWorkers*3; // rough estimate: each food worker sustains ~3 people
 
+  // ─ Famine tracking ─
+  if(totalFood<S.pop*1.5){S.famineMonths=(S.famineMonths||0)+1;}else{S.famineMonths=Math.max(0,(S.famineMonths||0)-1);}
+
+  // ─ Sanitation pop cap — excess pop over latrine cap increases disease ─
+  const sanPopCap=getSanitationPopCap();
+  if(S.pop>sanPopCap){S.disease=Math.min(100,S.disease+(S.pop-sanPopCap)*0.3);}
+
+  // ─ Morale update ─
+  let moraleDelta=0;
+  const shrineCount=buildings.filter(b=>b.type==='church'&&b.built>=1).length;
+  moraleDelta+=shrineCount*2;
+  const foodTypeCount=[(R.food>0),(R.meat>0),(R.fish>0),(R.vegetables>0),(R.fruit>0),(R.eggs>0),(R.berries>0),(R.milk>0),(R.cheese>0)].filter(Boolean).length;
+  if(foodTypeCount>=5)moraleDelta+=2;else if(foodTypeCount>=3)moraleDelta+=1;
+  if(S.disease>60)moraleDelta-=3;
+  if(S.od>50)moraleDelta-=2;
+  if(totalFood<S.pop*1.5)moraleDelta-=5;
+  S.morale=Math.max(0,Math.min(100,(S.morale||50)+moraleDelta));
+
   // Villagers leave if hungry (food per pop too low for 2+ months)
   if(foodPerPop<1.5&&S.pop>2){
     const hungryCount=villagers.filter(v=>v.hunger<25).length;
@@ -1744,6 +1869,12 @@ function advanceMonth(){
     }
   }
 
+  // Low morale emigration
+  if((S.morale||50)<25&&S.pop>5&&Math.random()<0.3){
+    const candidate=villagers.filter(v=>v.hp>0).sort(()=>Math.random()-0.5)[0];
+    if(candidate){villagers=villagers.filter(v=>v!==candidate);S.pop--;msg('Villager left — low village morale','warn');}
+  }
+
   // Birth requires food surplus relative to pop — need ~2 food per person in stockpile
   // AND either enough food workers or small enough village
   const canGrow=totalFood>S.pop*2&&R.water>Math.floor(S.pop*0.5)&&(foodCapacity>=S.pop*0.5||S.pop<6);
@@ -1751,16 +1882,33 @@ function advanceMonth(){
     // Diet diversity across village boosts birthrate
     const avgDiet=villagers.length>0?villagers.reduce((s,v)=>s+(v.dietDiv||0),0)/villagers.length:0;
     const dietBonus=avgDiet>10?0.25:avgDiet>5?0.15:0;
-    let birthChance=0.35+dietBonus;
+    let birthChance=0.25+(S.morale||50)/200+dietBonus;
     if(festivalBirthBoost>0)birthChance=1.0;
     // Slow growth at larger populations — need proportionally more surplus
     if(S.pop>10)birthChance*=0.8;
     if(S.pop>20)birthChance*=0.7;
-    if(Math.random()<birthChance){spawnVillager();
+    if(Math.random()<birthChance){spawnVillager();playBirthChime();
       const reason=festivalBirthBoost>0?' (festival!)':dietBonus>0?' (healthy diet!)':'';
       msg('A new villager has arrived!'+reason,'good');}
     if(festivalBirthBoost>0)festivalBirthBoost--;
   }
+
+  // ─ Immigration ─
+  const tradeScoreImm=buildings.filter(b=>['market','tradingpost','inn'].includes(b.type)&&b.built>=1).length*10;
+  const immigChance=Math.max(0,(tradeScoreImm-10)/300+((S.morale||50)-50)/400);
+  if(S.pop<S.housing&&S.disease<60&&Math.random()<immigChance){
+    spawnVillager();
+    const nv=villagers[villagers.length-1];
+    nv.immigrant=true;
+    const kind=Math.random()<0.3?'refugee':'trader';
+    nv.immigrantKind=kind;
+    msg('A '+kind+' arrived and joined the village!','good');
+  }
+
+  // ─ Forest ecology messages ─
+  const fh=getForestHealth();
+  if(fh<0.3&&Math.random()<0.25)msg('Deforestation is driving animals away!','warn');
+  if(fh<0.1&&Math.random()<0.5)msg('The forests are gone — wildlife has fled!','bad');
 
   // ─ Flowers near prosperity ─
   if(S.san>30&&flowers.length<40&&Math.random()<0.3){
@@ -1800,11 +1948,13 @@ function rollRaid(){
   raidChance=Math.max(0.02,Math.min(0.3,raidChance));
   if(Math.random()>raidChance)return;
   // Raid happens!
+  playRaidAlarm();
   const raidStr=10+Math.floor(S.month*0.3)+Math.floor(Math.random()*15);
   const defStr=def+Math.floor(Math.random()*10);
   if(defStr>=raidStr){
     // Raid repelled!
     msg('Bandits attacked but were repelled! (Defense: '+def+')','good');
+    S.morale=Math.min(100,(S.morale||50)+5);
     // Guards may get hurt
     const guards=villagers.filter(v=>v.prof==='guard');
     for(const g of guards){if(Math.random()<0.15){g.hp-=15;if(g.hp<=0)msg('A guard was killed defending the village!','bad');}}
@@ -1816,6 +1966,7 @@ function rollRaid(){
     const woodLoss=Math.min(R.wood||0,Math.floor((R.wood||0)*severity*0.2));
     R.coin-=coinLoss;R.food-=foodLoss;R.wood-=woodLoss;
     msg('Bandits raided the village! Lost '+coinLoss+' coins, '+foodLoss+' food, '+woodLoss+' wood','bad');
+    S.morale=Math.max(0,(S.morale||50)-15);
     // May injure villagers
     const injured=Math.floor(severity*3);
     for(let i=0;i<injured&&i<villagers.length;i++){
@@ -1836,7 +1987,7 @@ function rollRaid(){
   }
 }
 
-function clampStats(){S.san=clamp(S.san,0,100);S.waterQ=clamp(S.waterQ,0,100);S.od=clamp(S.od,0,100);S.disease=clamp(S.disease,0,100);S.helm=clamp(S.helm,0,100);}
+function clampStats(){S.san=clamp(S.san,0,100);S.waterQ=clamp(S.waterQ,0,100);S.od=clamp(S.od,0,100);S.disease=clamp(S.disease,0,100);S.helm=clamp(S.helm,0,100);S.morale=clamp(S.morale||50,0,100);}
 
 // ══ PHASES ══
 function checkPhase(){
@@ -1936,7 +2087,7 @@ function render(){
   try{
   updateSeasonPalette();
   X.clearRect(0,0,W,H);
-  drawGround();drawMountains();drawLakes();drawTradeRoad();drawRiver();drawDenseForestBG();drawODZones();drawFlowers();drawPaths();drawPipes();drawMarketplace();
+  drawGround();drawMountains();drawLakes();drawTradeRoad();drawRiver();drawDenseForestBG();drawODZones();drawFlowers();drawPaths();drawPipes();drawMarketplace();drawJobSquare();
 
   // Depth-sort everything
   const drawables=[];
@@ -1965,6 +2116,23 @@ function render(){
   drawWeather();
   // Season overlay tint
   if(SEA.overlayCol!=='rgba(0,0,0,0)'){X.fillStyle=SEA.overlayCol;X.fillRect(0,0,W,H);}
+  // ── DAY/NIGHT CYCLE ──
+  const dayF=getDayFactor();
+  if(dayF<1.0){
+    const na=(1-dayF)*0.62;
+    X.fillStyle=`rgba(8,12,35,${na})`;
+    X.fillRect(0,0,W,H);
+    if(dayF<0.25){
+      X.fillStyle=`rgba(255,255,255,${(0.25-dayF)*3})`;
+      for(let i=0;i<80;i++){const sx=(i*137+73)%W,sy=(i*91+31)%(H*0.5);X.beginPath();X.arc(sx,sy,0.8,0,Math.PI*2);X.fill();}
+    }
+  }
+  // ── FAMINE BORDER ──
+  if((S.famineMonths||0)>=2){
+    const pulse=0.04+0.03*Math.sin(tick*0.05);
+    X.strokeStyle=`rgba(220,50,50,${pulse*4})`;
+    X.lineWidth=8;X.strokeRect(4,4,W-8,H-8);
+  }
   drawBuildGhost();
   drawSelectionRing();
   }catch(err){console.error('Render error:',err);}
@@ -2320,6 +2488,51 @@ function drawMarketplace(){
   X.fillStyle='#8a8070';X.beginPath();X.ellipse(cp.x,cp.y+u*0.3,u*1.3,u*0.6,0,0,Math.PI*2);X.fill();
 }
 
+const JOB_SQ={x:0.56,y:0.5};
+function drawJobSquare(){
+  const p=ts(JOB_SQ);const u=scl(0.003);
+  // Ground — same packed dirt as central marketplace
+  X.fillStyle='#c8b888';X.beginPath();X.ellipse(p.x,p.y,u*5,u*3,0,0,Math.PI*2);X.fill();
+  X.fillStyle='#b8a878';X.beginPath();X.ellipse(p.x,p.y,u*4,u*2.4,0,0,Math.PI*2);X.fill();
+  // Wooden post
+  X.fillStyle='#8a6030';X.fillRect(p.x-u*0.3,p.y-u*6,u*0.6,u*6.5);
+  X.fillStyle='#6a4018';X.fillRect(p.x-u*0.05,p.y-u*6,u*0.15,u*6.5);
+  // Crossbar near top
+  X.fillStyle='#9a7040';X.fillRect(p.x-u*2.8,p.y-u*5.8,u*5.6,u*0.4);
+  // Sign plank — tilted, hanging from crossbar
+  X.save();
+  X.translate(p.x,p.y-u*4.5);
+  X.rotate(-0.07);
+  const sw=u*4.5,sh=u*1.8,sr=u*0.4;
+  // Plank body with rounded corners
+  X.fillStyle='#c8913a';
+  X.beginPath();
+  X.moveTo(-sw+sr,-sh/2);X.lineTo(sw-sr,-sh/2);X.arc(sw-sr,-sh/2+sr,sr,-Math.PI/2,0);
+  X.lineTo(sw,sh/2-sr);X.arc(sw-sr,sh/2-sr,sr,0,Math.PI/2);
+  X.lineTo(-sw+sr,sh/2);X.arc(-sw+sr,sh/2-sr,sr,Math.PI/2,Math.PI);
+  X.lineTo(-sw,-sh/2+sr);X.arc(-sw+sr,-sh/2+sr,sr,Math.PI,3*Math.PI/2);
+  X.closePath();X.fill();
+  // Plank border
+  X.strokeStyle='#7a5020';X.lineWidth=1.5;X.stroke();
+  // Wood grain
+  X.strokeStyle='rgba(90,50,10,0.2)';X.lineWidth=0.8;
+  for(let gi=-1;gi<=1;gi++){X.beginPath();X.moveTo(gi*u*1.3,-sh/2+u*0.2);X.lineTo(gi*u*1.3+u*0.1,sh/2-u*0.2);X.stroke();}
+  // Nail holes
+  X.fillStyle='#5a3810';
+  X.beginPath();X.arc(-sw+u*0.7,-sh/2+u*0.5,u*0.2,0,Math.PI*2);X.fill();
+  X.beginPath();X.arc(sw-u*0.7,-sh/2+u*0.5,u*0.2,0,Math.PI*2);X.fill();
+  // Painted text
+  const fs=Math.max(7,scl(0.0078));
+  X.fillStyle='#3a1800';X.font=`bold ${fs}px Georgia,serif`;X.textAlign='center';X.textBaseline='middle';
+  X.fillText('Open to Work',0,u*0.1);
+  X.restore();
+  // Hanging strings from crossbar to plank
+  X.strokeStyle='#8a6030';X.lineWidth=1;
+  X.beginPath();X.moveTo(p.x-u*2,p.y-u*5.4);X.lineTo(p.x-u*2.1,p.y-u*5.0);X.stroke();
+  X.beginPath();X.moveTo(p.x+u*2,p.y-u*5.4);X.lineTo(p.x+u*2.1,p.y-u*5.0);X.stroke();
+  X.textAlign='left';X.textBaseline='alphabetic';
+}
+
 function drawTree(t){
   const p=ts(t);const sz=scl(t.s*0.0007);const sw=Math.sin(tick*0.012+t.sw)*scl(0.0008);
   // Stump if depleted
@@ -2639,19 +2852,26 @@ function drawBuiltHut(p,sc){
   X.fillStyle='#6a5030';X.beginPath();X.arc(p.x,p.y-u*2.2,u*0.1,0,Math.PI*2);X.fill();
 }
 function drawLatrine(p,sc,b){
-  const u=scl(0.003);
+  const u=scl(0.003);const lv=b&&b.level||1;
   X.fillStyle='#8B6914';X.fillRect(p.x-u*1.5,p.y-u*3.5,u*3,u*3.5);
   X.fillStyle='#6B4E0A';X.fillRect(p.x-u*0.7,p.y-u*3,u*1.4,u*3);
   X.fillStyle='#C8B04E';X.beginPath();X.arc(p.x,p.y-u*2,u*0.4,Math.PI*0.15,Math.PI*0.85);X.fill();
-  X.fillStyle='#708090';X.beginPath();X.moveTo(p.x-u*1.8,p.y-u*3.5);X.lineTo(p.x-u*1.3,p.y-u*4.3);X.lineTo(p.x+u*1.8,p.y-u*4);X.lineTo(p.x+u*1.8,p.y-u*3.3);X.closePath();X.fill();
+  // Lv3: metal roof (grey trapezoid replaces brown)
+  if(lv>=3){X.fillStyle='#778899';X.beginPath();X.moveTo(p.x-u*2.1,p.y-u*3.5);X.lineTo(p.x-u*1.5,p.y-u*4.5);X.lineTo(p.x+u*1.5,p.y-u*4.2);X.lineTo(p.x+u*2.1,p.y-u*3.3);X.closePath();X.fill();}
+  else{X.fillStyle='#708090';X.beginPath();X.moveTo(p.x-u*1.8,p.y-u*3.5);X.lineTo(p.x-u*1.3,p.y-u*4.3);X.lineTo(p.x+u*1.8,p.y-u*4);X.lineTo(p.x+u*1.8,p.y-u*3.3);X.closePath();X.fill();}
+  // Lv2: vent pipe on top
+  if(lv>=2){X.strokeStyle='#555';X.lineWidth=u*0.5;X.beginPath();X.moveTo(p.x+u*0.8,p.y-u*3.5);X.lineTo(p.x+u*0.8,p.y-u*5.2);X.stroke();
+    X.fillStyle='#444';X.fillRect(p.x+u*0.4,p.y-u*5.3,u*0.8,u*0.2);}
   // Waste fill indicator
   if(b){const waste=b.waste||0;const cap=(BD.latrine.latrineWasteCap||20)*(b.level||1);const fill=waste/cap;
     if(fill>0.1){X.fillStyle=fill>0.7?'#6a3a10':'#8a6a30';X.fillRect(p.x-u*1.3,p.y-u*0.3,u*2.6,u*0.3);
     X.fillStyle=fill>0.7?'#8a4a10':'#a08040';X.fillRect(p.x-u*1.3,p.y-u*0.3,u*2.6*fill,u*0.3);}
   }
 }
-function drawWell(p,sc){
-  const u=scl(0.003);
+function drawWell(p,sc,b){
+  const u=scl(0.003);const lv=b&&b.level||1;
+  // Lv3: stone ring surround
+  if(lv>=3){X.strokeStyle='#8a8a8a';X.lineWidth=u*0.6;X.beginPath();X.ellipse(p.x,p.y,u*2.5,u*1.2,0,0,Math.PI*2);X.stroke();}
   X.fillStyle='#9a9080';X.beginPath();X.ellipse(p.x,p.y,u*1.8,u*0.8,0,0,Math.PI*2);X.fill();
   X.fillStyle='#8a8070';X.fillRect(p.x-u*1.8,p.y-u*1.5,u*3.6,u*1.5);
   X.fillStyle='#706858';X.beginPath();X.ellipse(p.x,p.y-u*1.5,u*2,u*0.9,0,0,Math.PI*2);X.fill();
@@ -2661,6 +2881,9 @@ function drawWell(p,sc){
   const swing=Math.sin(tick*0.025)*u*0.3;
   X.strokeStyle='#8a7a5a';X.lineWidth=1;X.beginPath();X.moveTo(p.x,p.y-u*4.3);X.lineTo(p.x+swing,p.y-u*2.5);X.stroke();
   X.fillStyle='#6a5030';X.fillRect(p.x+swing-u*0.3,p.y-u*2.5,u*0.6,u*0.5);
+  // Lv2: wooden roof canopy
+  if(lv>=2){X.fillStyle='#8a6030';X.fillRect(p.x-u*2.2,p.y-u*5.2,u*4.4,u*0.3);
+    X.fillStyle='#a08040';X.beginPath();X.moveTo(p.x-u*2.3,p.y-u*5.2);X.lineTo(p.x,p.y-u*6.2);X.lineTo(p.x+u*2.3,p.y-u*5.2);X.closePath();X.fill();}
 }
 function drawCompost(p,sc){
   const u=scl(0.003);
@@ -2670,22 +2893,34 @@ function drawCompost(p,sc){
   for(let i=0;i<2;i++){const sx=p.x+(i-0.5)*u*1.5,ph=tick*0.03+i*2,dr=Math.sin(ph)*u*0.4;
     X.beginPath();X.moveTo(sx,p.y-u*2.3);X.quadraticCurveTo(sx+dr,p.y-u*3.5,sx-dr*0.5,p.y-u*4.5);X.stroke();}
 }
-function drawSchool(p,sc){
-  const u=scl(0.003);const w=u*4.5,h=u*3;
+function drawSchool(p,sc,b){
+  const u=scl(0.003);const w=u*4.5,h=u*3;const lv=b&&b.level||1;
+  // Lv3: classroom wing on right
+  if(lv>=3){X.fillStyle='#dfc070';X.fillRect(p.x+w/2,p.y-h*0.85,u*3,h*0.85);
+    X.fillStyle='#88bbdd';X.fillRect(p.x+w/2+u*0.5,p.y-h*0.7,u*0.7,u*0.55);X.fillRect(p.x+w/2+u*1.8,p.y-h*0.7,u*0.7,u*0.55);
+    X.fillStyle='#a03520';X.beginPath();X.moveTo(p.x+w/2-u*0.2,p.y-h*0.85);X.lineTo(p.x+w/2+u*1.5,p.y-h*0.85-u*1.2);X.lineTo(p.x+w/2+u*3.2,p.y-h*0.85);X.closePath();X.fill();}
   X.fillStyle='#e8c878';X.fillRect(p.x-w/2,p.y-h,w,h);
   X.fillStyle='#6a3a1a';X.fillRect(p.x-u*0.5,p.y-h*0.5,u*1,h*0.5);
   for(const wx of [-u*1.5,u*1.5]){X.fillStyle='#88bbdd';X.fillRect(p.x+wx-u*0.35,p.y-h*0.75,u*0.7,u*0.6);}
   X.fillStyle='#b04028';X.beginPath();X.moveTo(p.x-w/2-u*0.4,p.y-h);X.lineTo(p.x,p.y-h-u*2);X.lineTo(p.x+w/2+u*0.4,p.y-h);X.closePath();X.fill();
   const fw=Math.sin(tick*0.05)*u*0.2;X.fillStyle='#555';X.fillRect(p.x-u*0.05,p.y-h-u*2,u*0.1,u*-1);
   X.fillStyle='#ff7043';X.beginPath();X.moveTo(p.x+u*0.05,p.y-h-u*3);X.lineTo(p.x+u*0.8+fw,p.y-h-u*2.7);X.lineTo(p.x+u*0.05,p.y-h-u*2.4);X.fill();
+  // Lv2: school flag on a pole to the left
+  if(lv>=2){const ff=Math.sin(tick*0.04)*u*0.25;X.fillStyle='#444';X.fillRect(p.x-w/2-u*1.2,p.y-h-u*2.5,u*0.12,u*2.5);
+    X.fillStyle='#4caf50';X.beginPath();X.moveTo(p.x-w/2-u*1.08,p.y-h-u*2.5);X.lineTo(p.x-w/2-u*1.08+u*0.9+ff,p.y-h-u*2.2);X.lineTo(p.x-w/2-u*1.08,p.y-h-u*1.9);X.fill();}
 }
-function drawClinic(p,sc){
-  const u=scl(0.003);const w=u*4.5,h=u*3.5;
+function drawClinic(p,sc,b){
+  const u=scl(0.003);const w=u*4.5,h=u*3.5;const lv=b&&b.level||1;
+  // Lv3: wing extension on left
+  if(lv>=3){X.fillStyle='#e8e4d8';X.fillRect(p.x-w/2-u*2.5,p.y-h*0.8,u*2.5,h*0.8);
+    X.fillStyle='#d0d0d0';X.fillRect(p.x-w/2-u*2.7,p.y-h*0.8-u*0.3,u*2.9,u*0.4);}
   X.fillStyle='#f0ece0';X.fillRect(p.x-w/2,p.y-h,w,h);
   X.fillStyle='#88bbdd';X.fillRect(p.x-w/2+u*0.3,p.y-h*0.65,w-u*0.6,u*0.5);
   X.fillStyle='#3080b0';X.fillRect(p.x-u*0.4,p.y-h*0.4,u*0.8,h*0.4);
   X.fillStyle='#d0d0d0';X.fillRect(p.x-w/2-u*0.2,p.y-h-u*0.3,w+u*0.4,u*0.4);
   X.fillStyle='#ef5350';X.fillRect(p.x-u*0.15,p.y-h-u*1.6,u*0.3,u*1.2);X.fillRect(p.x-u*0.6,p.y-h-u*1.2,u*1.2,u*0.3);
+  // Lv2: extra red cross on wall
+  if(lv>=2){X.fillStyle='#ef5350';X.fillRect(p.x+u*1.5,p.y-h*0.7,u*0.25,u*0.8);X.fillRect(p.x+u*1.2,p.y-h*0.55,u*0.8,u*0.25);}
 }
 function drawDrain(p,sc){
   const u=scl(0.003);
@@ -2913,8 +3148,8 @@ function drawQuarry(p,sc){
   X.fillStyle='#999';X.fillRect(p.x-u*2.5,p.y-u*1.9,u*0.5,u*0.4);
   X.fillStyle='#aaa';X.fillRect(p.x-u*2,p.y-u*1.5,u*0.5,u*0.4);
 }
-function drawFarm(p,sc){
-  const u=scl(0.003);
+function drawFarm(p,sc,b){
+  const u=scl(0.003);const lv=b&&b.level||1;
   X.fillStyle='#6a5030';X.fillRect(p.x-u*3,p.y-u*2,u*6,u*3.5);
   for(let row=0;row<3;row++){const ry=p.y-u*1.5+row*u*1;
     X.fillStyle='#7a5a38';X.fillRect(p.x-u*2.7,ry,u*5.4,u*0.25);
@@ -2923,6 +3158,15 @@ function drawFarm(p,sc){
       X.fillStyle='#5aaa30';X.beginPath();X.ellipse(cx,ry-u*0.35*gr,u*0.12,u*0.05,0.3,0,Math.PI*2);X.fill();}}
   X.fillStyle='#8a6a3a';for(const fx of [p.x-u*3,p.x,p.x+u*3])X.fillRect(fx-u*0.06,p.y-u*2.5,u*0.12,u*0.8);
   X.strokeStyle='#8a6a3a';X.lineWidth=0.6;X.beginPath();X.moveTo(p.x-u*3,p.y-u*2.2);X.lineTo(p.x+u*3,p.y-u*2.2);X.stroke();
+  // Lv2: irrigation lines
+  if(lv>=2){X.strokeStyle='rgba(80,160,220,0.5)';X.lineWidth=1.5;
+    X.beginPath();X.moveTo(p.x-u*3,p.y-u*0.5);X.lineTo(p.x+u*3,p.y-u*0.5);X.stroke();
+    X.beginPath();X.moveTo(p.x-u*3,p.y+u*0.5);X.lineTo(p.x+u*3,p.y+u*0.5);X.stroke();}
+  // Lv3: fence posts around perimeter
+  if(lv>=3){X.fillStyle='#7a5a2a';
+    for(let i=0;i<=4;i++){X.fillRect(p.x-u*3+i*u*1.5-u*0.06,p.y-u*2.1,u*0.12,u*0.4);X.fillRect(p.x-u*3+i*u*1.5-u*0.06,p.y+u*1.4,u*0.12,u*0.4);}
+    X.strokeStyle='#7a5a2a';X.lineWidth=0.7;X.beginPath();X.moveTo(p.x-u*3,p.y-u*2);X.lineTo(p.x+u*3,p.y-u*2);X.stroke();
+    X.beginPath();X.moveTo(p.x-u*3,p.y+u*1.5);X.lineTo(p.x+u*3,p.y+u*1.5);X.stroke();}
 }
 function drawTreatment(p,sc){
   const u=scl(0.003);
@@ -3154,7 +3398,11 @@ function drawBrickHouse(p,sc,b){
     X.fillStyle='#777';X.fillRect(p.x+u*1.1,p.y-u*5.1,u*0.7,u*0.2);}
 }
 function drawGranary(p,sc,b){
-  const u=scl(0.003);
+  const u=scl(0.003);const lv=b&&b.level||1;
+  // Lv3: overflow annex silo on the right
+  if(lv>=3){X.fillStyle='#c89015';X.fillRect(p.x+u*2.3,p.y-u*2.5,u*2.5,u*2.5);
+    X.fillStyle='#d4a020';X.beginPath();X.ellipse(p.x+u*3.55,p.y-u*2.5,u*1.25,u*0.45,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#a07810';X.beginPath();X.moveTo(p.x+u*3.55,p.y-u*3.8);X.lineTo(p.x+u*2.1,p.y-u*2.5);X.lineTo(p.x+u*5,p.y-u*2.5);X.closePath();X.fill();}
   // Round silo shape
   X.fillStyle='#d4a020';X.beginPath();X.ellipse(p.x,p.y,u*2,u*1,0,0,Math.PI*2);X.fill();
   X.fillStyle='#c89818';X.fillRect(p.x-u*2,p.y-u*3,u*4,u*3);
@@ -3166,6 +3414,11 @@ function drawGranary(p,sc,b){
   X.fillStyle='#6a4a10';X.beginPath();X.ellipse(p.x,p.y-u*0.1,u*0.6,u*0.8,0,Math.PI,Math.PI*2);X.fill();
   // Pointed roof
   X.fillStyle='#a08010';X.beginPath();X.moveTo(p.x,p.y-u*4.5);X.lineTo(p.x-u*2.2,p.y-u*3);X.lineTo(p.x+u*2.2,p.y-u*3);X.closePath();X.fill();
+  // Lv2: extra smaller cylinder silo on left
+  if(lv>=2){X.fillStyle='#c89818';X.fillRect(p.x-u*4.2,p.y-u*2.2,u*2,u*2.2);
+    X.fillStyle='#d4a020';X.beginPath();X.ellipse(p.x-u*3.2,p.y,u*1,u*0.4,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#d4a020';X.beginPath();X.ellipse(p.x-u*3.2,p.y-u*2.2,u*1,u*0.35,0,0,Math.PI*2);X.fill();
+    X.fillStyle='#a08010';X.beginPath();X.moveTo(p.x-u*3.2,p.y-u*3.3);X.lineTo(p.x-u*4.3,p.y-u*2.2);X.lineTo(p.x-u*2.1,p.y-u*2.2);X.closePath();X.fill();}
 }
 function drawWatchtower(p,sc,b){
   const u=scl(0.003);const lv=b.level||1;
@@ -3540,6 +3793,11 @@ function updateHUD(){
   const dietBonusHUD=avgDietHUD>10?0.25:avgDietHUD>5?0.15:0;
   const reproRate=festivalBirthBoost>0?100:Math.round((0.5+dietBonusHUD)*100);
   document.getElementById('r-repro').textContent=reproRate+'%';
+  // Morale display with color coding
+  const mor=Math.round(S.morale||50);
+  const morEl=document.getElementById('r-morale');
+  morEl.textContent=mor+'%';
+  morEl.style.color=mor>=70?'#8bc34a':mor>=40?'#ffd866':mor>=20?'#ffa726':'#ef5350';
   // Market popup is updated on-demand (not every frame) to preserve button click events
 }
 
@@ -3549,9 +3807,13 @@ function updateSelPanel(){
   el.style.display='block';
   if(selected.hp!==undefined&&selected.skin){// villager
     const profName=selected.prof?PROF_NAMES[selected.prof]:'None';
-    el.querySelector('.sp-name').textContent=(selected.prof?PROF_NAMES[selected.prof]:(selected.isChild?'Child':'Villager'))+(selected.edu>50?' \u{1F393}':'');
+    const ageVal=(selected.age||0).toFixed(1);
+    const sk=Math.round(selected.skill||0);
+    const skillTier=sk>=75?'Expert':sk>=50?'Skilled':sk>=25?'Apprentice':'Novice';
+    el.querySelector('.sp-name').textContent=(selected.name||'Villager')+(selected.isChild?' (child)':'')+(selected.edu>50?' \u{1F393}':'');
     el.querySelector('.sp-info').innerHTML=`
       <div>HP: ${Math.round(selected.hp)}% | Hunger: ${Math.round(selected.hunger)}% | Thirst: ${Math.round(selected.thirst)}%</div>
+      <div>Age: ${ageVal} | Skill: ${sk}/100 <span style="color:#ffd866">(${skillTier})</span></div>
       <div>Education: ${Math.round(selected.edu||0)}%${(selected.dietDiv||0)>3?' | <span style="color:#4caf50">Diverse diet \u2764</span>':''}</div>
       <div style="color:#d4a853">Profession: ${profName}${selected.prof?' <span onclick="fireVillager()" style="color:#ef5350;cursor:pointer;border:1px solid #ef5350;padding:0 4px;border-radius:3px;font-size:9px;margin-left:4px">Fire</span>':''}</div>
       <div class="sp-task">Task: ${selected.task}${selected.carrying?' (carrying '+selected.carrying+')':''}</div>
@@ -3568,6 +3830,11 @@ function updateSelPanel(){
       const hasCompost=buildings.some(b=>b.type==='compost'&&b.built>=1&&(b.compostProduced||0)>0);
       const rw=selected.rawWaste||0;
       extra=`<div style="color:${hasCompost?'#4caf50':rw>0?'#ff9800':'#ef5350'}">Fertilizer: ${hasCompost?'Compost (full yield)':rw>0?'Raw waste: '+rw+' (disease risk!)':'None (poor yield)'}</div>`;
+    }
+    if(selected.type==='tradingpost'){
+      const cv=caravans[0];
+      const caravStatus=cv?`Caravan: ${cv.state} (timer:${Math.round(cv.timer)})`:caravans.length===0?'No caravan active':'';
+      extra=`<div style="color:#d4a853">${caravStatus}</div><div style="margin-top:4px"><button onclick="sendCaravan()" style="padding:3px 10px;background:#d4a853;border:none;border-radius:5px;color:#1a1a10;font-weight:700;font-size:10px;cursor:pointer;font-family:inherit">Send Caravan (100🪙 20🪵)</button></div>`;
     }
     if(selected.type==='forestryhut')extra=`<div style="color:#4caf50">Wood storage: +${(bd.storWood||60)*lv} | ${getEduLevel()>15?'Trees regrowing':'Needs educated villagers for regrowth'}</div>`;
     if(selected.type==='fishinghut')extra=`<div style="color:#3a8ab0">Fish storage: +${(BD.fishinghut.storFish||40)*lv} | Fish: ${R.fish}/${getStorageCap('fish')} — assign villager to fish</div>`;
@@ -3630,6 +3897,7 @@ function updateEventBar(){
     {nm:'Water Quality',v:S.waterQ,col:S.waterQ>60?'#42a5f5':S.waterQ>30?'#ffa726':'#ef5350'},
     {nm:'Open Defecation',v:S.od,col:S.od>40?'#ef5350':S.od>15?'#ffa726':'#66bb6a',bad:true},
     {nm:'Helminth Risk',v:S.helm,col:S.helm>40?'#ef5350':S.helm>20?'#ffa726':'#66bb6a',bad:true},
+    {nm:'Morale',v:S.morale||50,col:(S.morale||50)>60?'#ce93d8':(S.morale||50)>30?'#ffa726':'#ef5350'},
   ];
   let hbHTML=`<div class="hb"><div class="hb-title">Health Status <span class="hb-season" style="background:${sCol}">${sNm}</span></div>`;
   for(const b of bars){
@@ -3678,6 +3946,12 @@ function updateEventBar(){
   hbHTML+=`</div></div>`;
 
   const issues=[];
+  // Famine warning
+  if((S.famineMonths||0)>=2)issues.push({t:'FAMINE CRISIS!',d:`Food shortage for ${S.famineMonths} months — critical!`,c:'crit'});
+  else if((S.famineMonths||0)===1)issues.push({t:'Food Shortage!',d:'Village is running low on food — assign more workers',c:'warn'});
+  // Sanitation pop cap
+  const sanCapNow=getSanitationPopCap();
+  if(S.pop>=sanCapNow-1&&S.pop>0)issues.push({t:'Sanitation Overcrowded',d:`Pop ${S.pop} vs latrine capacity ${sanCapNow} — build more latrines!`,c:'warn'});
   // Critical issues
   if(S.disease>60)issues.push({t:'Disease Outbreak',d:`Disease: ${Math.round(S.disease)}% — build Clinic, improve sanitation`,c:'crit'});
   if(S.od>50)issues.push({t:'Open Defecation',d:`OD: ${Math.round(S.od)}% — build Latrines!`,c:'crit'});
@@ -3772,6 +4046,35 @@ window._sellRes=function(res,pr){
 };
 window._closeMarket=function(){toggleMarket();};
 
+// ══ CARAVAN ══
+function sendCaravan(){
+  if(caravans.length>0){msg('A caravan is already on the road!','warn');return;}
+  const tp=buildings.filter(b=>b.type==='tradingpost'&&b.built>=1)[0];
+  if(!tp){msg('Build a Trading Post first!','warn');return;}
+  if(R.coin<100||R.wood<20){msg('Need 100 coins and 20 wood to send a caravan','warn');return;}
+  R.coin-=100;R.wood-=20;
+  caravans.push({state:'outbound',timer:0,returnIn:1200+Math.random()*600,ox:tp.x,oy:tp.y});
+  msg('Caravan sent! Returns in ~2 months.','good');
+  playCaravanSound();
+}
+window.sendCaravan=sendCaravan;
+
+function updateCaravans(){
+  for(let i=caravans.length-1;i>=0;i--){
+    const c=caravans[i];c.timer+=speed;
+    if(c.state==='outbound'){if(c.timer>600){c.state='away';c.timer=0;}}
+    else if(c.state==='away'){if(c.timer>(c.returnIn||1200)){c.state='returning';c.timer=0;}}
+    else if(c.state==='returning'){
+      if(c.timer>600){
+        const trScore=getTradeScore();
+        R.coin+=150+trScore*3;R.wood+=15;R.stone+=10;
+        msg('Caravan returned! +coin, +15 wood, +10 stone','good');
+        caravans.splice(i,1);
+      }
+    }
+  }
+}
+
 // ══ FESTIVAL ══
 function startFestival(){
   if(festivalTimer>0){msg('Festival already in progress!','warn');return;}
@@ -3780,6 +4083,8 @@ function startFestival(){
   R.coin-=cost;
   festivalTimer=300; // ~5 seconds at speed 1
   festivalBirthBoost=6; // months of doubled birthrate
+  S.morale=Math.min(100,(S.morale||50)+20);
+  playFestivalDrum();
   msg('Festival! Everyone is dancing! Birthrate doubled!','good');
   // Make all villagers dance (interrupt their current task briefly)
   for(const v of villagers){
@@ -3808,6 +4113,7 @@ function loop(){
     updateVillagers();
     updateAnimals();
     updateTraders();
+    updateCaravans();
     // Festival countdown
     if(festivalTimer>0){
       festivalTimer-=speed;
@@ -3845,7 +4151,8 @@ function getGameState(){
     huts:huts.map(h=>({x:h.x,y:h.y,level:h.level,size:h.size,shape:h.shape})),
     trees:trees.map(t=>({x:t.x,y:t.y,s:t.s,sw:t.sw,type:t.type,wood:t.wood,maxWood:t.maxWood,dense:t.dense||false})),
     rocks:rocks.map(r=>({x:r.x,y:r.y,s:r.s,stone:r.stone,clay:r.clay,isClay:r.isClay||false})),
-    villagers:villagers.map(v=>({x:v.x,y:v.y,skin:v.skin,shirt:v.shirt,wrap:v.wrap,sz:v.sz,isChild:v.isChild,hp:v.hp,hunger:v.hunger,thirst:v.thirst,task:v.task,edu:v.edu||0,speed:v.speed,sick:v.sick,prof:v.prof||null,dietDiv:v.dietDiv||0})),
+    caravans:caravans.map(c=>({state:c.state,timer:c.timer,returnIn:c.returnIn,ox:c.ox,oy:c.oy})),
+    villagers:villagers.map(v=>({x:v.x,y:v.y,skin:v.skin,shirt:v.shirt,wrap:v.wrap,sz:v.sz,isChild:v.isChild,hp:v.hp,hunger:v.hunger,thirst:v.thirst,task:v.task,edu:v.edu||0,speed:v.speed,sick:v.sick,prof:v.prof||null,dietDiv:v.dietDiv||0,name:v.name||'',age:v.age||20,maxAge:v.maxAge||70,skill:v.skill||0})),
     animals:animals.map(a=>({type:a.type,x:a.x,y:a.y,hp:a.hp,state:a.state,sz:a.sz,speed:a.speed,dmg:a.dmg,huntRadius:a.huntRadius,fleeRadius:a.fleeRadius,_homeX:a._homeX,_homeY:a._homeY})),
     pipes:pipes.map(p=>({from:{x:p.from.x,y:p.from.y},to:{x:p.to.x,y:p.to.y},built:p.built})),
     riverPts:riverPts.map(r=>({x:r.x,y:r.y})),
@@ -3875,7 +4182,10 @@ function saveGame(){
 function loadGame(slotName){
   const saves=getSaves();const g=saves[slotName];if(!g)return;
   villageName=g.name||slotName;
-  R=g.R;for(const k of['fish','berries','meat','vegetables','fruit','eggs','milk','cheese'])if(R[k]===undefined)R[k]=0;S=g.S;tick=g.tick||0;mTimer=g.mTimer||0;
+  R=g.R;for(const k of['fish','berries','meat','vegetables','fruit','eggs','milk','cheese'])if(R[k]===undefined)R[k]=0;
+  S=g.S;if(S.morale===undefined)S.morale=50;if(S.famineMonths===undefined)S.famineMonths=0;
+  tick=g.tick||0;mTimer=g.mTimer||0;
+  caravans=(g.caravans||[]).map(c=>({...c}));
   camX=g.camX||0.5;camY=g.camY||0.5;camZ=g.camZ||1.5;
   riverPts=g.riverPts||[];mountains=g.mountains||[];lakes=g.lakes||[];
   denseForests=g.denseForests||[];tradeRoad=g.tradeRoad||[];
@@ -3894,7 +4204,7 @@ function loadGame(slotName){
   trees=(g.trees||[]).map(t=>({...t,chopping:false}));
   rocks=(g.rocks||[]).map(r=>({...r,mining:false}));
   buildings=(g.buildings||[]).map(b=>({...b,workers:[],age:0}));
-  villagers=(g.villagers||[]).map(v=>({...v,tx:v.x,ty:v.y,target:null,taskTimer:0,carrying:null,carryAmt:0,walkFrame:0,dir:1,idleTimer:0,home:huts.length?huts[0]:{x:0.5,y:0.5},task:'idle'}));
+  villagers=(g.villagers||[]).map(v=>({...v,tx:v.x,ty:v.y,target:null,taskTimer:0,carrying:null,carryAmt:0,walkFrame:0,dir:1,idleTimer:0,home:huts.length?huts[0]:{x:0.5,y:0.5},task:'idle',name:v.name||'',age:v.age||20,maxAge:v.maxAge||70,skill:v.skill||0}));
   animals=(g.animals||[]).map(a=>({...a,tx:a.x,ty:a.y,timer:0,_prey:null,col:({antelope:'#c08040',elephant:'#888',lion:'#c8a040',croc:'#4a6a30',hippo:'#6a5a5a',rabbit:'#a08060',ostrich:'#3a3a3a',chicken:'#c0a060'})[a.type]||'#888'}));
   // Rebuild pipe references
   pipes=(g.pipes||[]).map(p=>({...p,fromB:buildings.find(b=>Math.hypot(b.x-p.from.x,b.y-p.from.y)<0.01&&b.type==='latrine')||null,toB:buildings.find(b=>Math.hypot(b.x-p.to.x,b.y-p.to.y)<0.01&&['treatment','compost','biogas'].includes(b.type))||'river'}));
@@ -3945,7 +4255,8 @@ function startGame(diff){
   const cfg={easy:[1500,150,120,80,40,20],normal:[1000,100,80,60,15,10],hard:[600,60,50,30,5,0]};
   const[c,w,f,wa,st,cl]=cfg[diff];
   R={coin:c,wood:w,stone:st,clay:cl,food:f,water:wa,fish:0,berries:0,meat:0,vegetables:0,fruit:0,eggs:0,milk:0,cheese:0};
-  S={month:1,pop:0,housing:15,san:10,waterQ:35,disease:20,od:40,helm:30,deaths:0,phase:0};
+  S={month:1,pop:0,housing:15,san:10,waterQ:35,disease:20,od:40,helm:30,deaths:0,phase:0,morale:50,famineMonths:0};
+  caravans=[];
   genWorld();updateHUD();updateBuildBar();checkPhase();
   document.getElementById('m-intro').classList.remove('show');
   msg('Select villagers (click) and assign tasks (right-click).','info');
