@@ -12,7 +12,8 @@ canvas{display:block}
 
 #res-bar{position:fixed;top:0;left:0;right:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 10px;z-index:10;pointer-events:none}
 .res-row{display:flex;justify-content:center;gap:4px}
-.rb{display:flex;align-items:center;gap:3px;padding:3px 10px;background:rgba(0,0,0,0.75);border-radius:10px;font-size:12px;font-weight:700;color:#fff;border:1px solid rgba(255,255,255,0.08);pointer-events:auto}
+.rb{display:flex;align-items:center;gap:3px;padding:3px 10px;background:rgba(0,0,0,0.75);border-radius:10px;font-size:12px;font-weight:700;color:#fff;border:1px solid rgba(255,255,255,0.08);pointer-events:auto;transition:background 0.2s,border-color 0.2s}
+.rb.res-short{background:rgba(180,30,30,0.85);border-color:#ff4444;animation:res-pulse 0.5s ease-in-out 3}
 .rb .ri{font-size:14px}.rb .rv{color:#ffd866;min-width:24px;text-align:right}
 
 #phase-banner{position:fixed;top:36px;left:50%;transform:translateX(-50%);padding:4px 16px;background:rgba(0,0,0,0.7);border-radius:10px;font-size:11px;font-weight:700;color:#d4a853;border:1px solid #d4a85333;pointer-events:none;z-index:10}
@@ -86,6 +87,7 @@ canvas{display:block}
 .save-slot .ss-info{font-size:9px;color:#888}
 .save-slot .ss-del{color:#ef5350;font-size:10px;cursor:pointer;padding:2px 6px;border-radius:4px}
 .save-slot .ss-del:hover{background:rgba(239,83,80,0.2)}
+@keyframes res-pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
 </style>
 </head>
 <body>
@@ -530,7 +532,7 @@ function updateAnimals(){
       }
       else if(a.state==='prowl'){
         // Hunt nearest villager at edge of village
-        const effectiveHuntR=a.huntRadius*(1+(1-getDayFactor())*0.6);
+        const effectiveHuntR=a.huntRadius;
         let target=null,nd=Infinity;
         for(const v of villagers){const d=dist(a,v);if(d<effectiveHuntR&&d<nd){nd=d;target=v;}}
         if(target){
@@ -1030,10 +1032,26 @@ cv.addEventListener('contextmenu',e=>{
 });
 
 // ══ BUILDING ══
+function flashShortResources(bd){
+  const map={coin:'r-coin',wood:'r-wood',stone:'r-stone',clay:'r-clay'};
+  const needs={coin:bd.coin,wood:bd.wood,stone:bd.stone||0,clay:bd.clay||0};
+  for(const[res,elId]of Object.entries(map)){
+    if(needs[res]>0&&R[res]<needs[res]){
+      const el=document.getElementById(elId);
+      if(!el)continue;
+      const rb=el.closest('.rb');
+      if(!rb)continue;
+      rb.classList.remove('res-short');
+      void rb.offsetWidth; // force reflow to restart animation
+      rb.classList.add('res-short');
+      setTimeout(()=>rb.classList.remove('res-short'),1800);
+    }
+  }
+}
 function tryBuild(type,wx,wy){
   const bd=BD[type];
   if(bd.phase>S.phase){msg('Unlock Phase '+(bd.phase+1)+' first!','bad');return;}
-  if(R.coin<bd.coin||R.wood<bd.wood||R.stone<(bd.stone||0)||R.clay<(bd.clay||0)){msg('Not enough resources!','bad');return;}
+  if(R.coin<bd.coin||R.wood<bd.wood||R.stone<(bd.stone||0)||R.clay<(bd.clay||0)){msg('Not enough resources!','bad');flashShortResources(bd);return;}
 
   // ─ SEWER PIPE special: click latrine first, then river/treatment ─
   if(type==='sewer'){
@@ -1095,14 +1113,6 @@ window.upgradeBuilding=function(){
 };
 
 // ══ VILLAGER AI ══
-function getDayFactor(){
-  const dayLen=3600;
-  const phase=tick%dayLen;
-  if(phase<300)return phase/300;
-  if(phase<1800)return 1.0;
-  if(phase<2100)return 1-(phase-1800)/300;
-  return 0.0;
-}
 
 function getSanitationPopCap(){
   const lats=buildings.filter(b=>b.type==='latrine'&&b.built>=1);
@@ -1537,11 +1547,6 @@ function updateVillagers(){
       else if(v.task==='move'){v.task='idle';}
       else if(v.task==='idle'){
         v.idleTimer+=speed;
-        // Night: villagers without profession drift home
-        if(!v.prof&&getDayFactor()<0.3&&v.idleTimer>20){
-          v.idleTimer=0;
-          v.tx=v.home.x+(Math.random()-0.5)*0.005;v.ty=v.home.y+(Math.random()-0.5)*0.004;
-        }
         // Profession auto-seek: try to resume work every ~100 ticks
         if(v.prof&&v.idleTimer>60){
           v.idleTimer=0;
@@ -2116,17 +2121,6 @@ function render(){
   drawWeather();
   // Season overlay tint
   if(SEA.overlayCol!=='rgba(0,0,0,0)'){X.fillStyle=SEA.overlayCol;X.fillRect(0,0,W,H);}
-  // ── DAY/NIGHT CYCLE ──
-  const dayF=getDayFactor();
-  if(dayF<1.0){
-    const na=(1-dayF)*0.62;
-    X.fillStyle=`rgba(8,12,35,${na})`;
-    X.fillRect(0,0,W,H);
-    if(dayF<0.25){
-      X.fillStyle=`rgba(255,255,255,${(0.25-dayF)*3})`;
-      for(let i=0;i<80;i++){const sx=(i*137+73)%W,sy=(i*91+31)%(H*0.5);X.beginPath();X.arc(sx,sy,0.8,0,Math.PI*2);X.fill();}
-    }
-  }
   // ── FAMINE BORDER ──
   if((S.famineMonths||0)>=2){
     const pulse=0.04+0.03*Math.sin(tick*0.05);
