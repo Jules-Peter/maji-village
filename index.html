@@ -397,41 +397,41 @@ function spawnAnimals(){
   // Antelopes — peaceful herds across the wider map
   for(let i=0;i<8;i++){
     const a=Math.random()*Math.PI*2,d=0.15+Math.random()*0.25;
-    animals.push({type:'antelope',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00045,hp:30,state:'wander',timer:0,sz:0.004,col:'#c08040',fleeRadius:0.05});
+    animals.push({type:'antelope',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00045,hp:30,state:'wander',timer:0,sz:0.008,col:'#c08040',fleeRadius:0.05});
   }
   // Rabbits — small, fast, easy to catch
   for(let i=0;i<6;i++){
     const a=Math.random()*Math.PI*2,d=0.08+Math.random()*0.2;
-    animals.push({type:'rabbit',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0005,hp:10,state:'wander',timer:0,sz:0.0025,col:'#a08060',fleeRadius:0.04});
+    animals.push({type:'rabbit',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0005,hp:10,state:'wander',timer:0,sz:0.005,col:'#a08060',fleeRadius:0.04});
   }
   // Ostriches — fast runners, decent meat
   for(let i=0;i<3;i++){
     const a=Math.random()*Math.PI*2,d=0.12+Math.random()*0.2;
-    animals.push({type:'ostrich',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00055,hp:20,state:'wander',timer:0,sz:0.005,col:'#3a3a3a',fleeRadius:0.06});
+    animals.push({type:'ostrich',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00055,hp:20,state:'wander',timer:0,sz:0.01,col:'#3a3a3a',fleeRadius:0.06});
   }
   // Wild chickens — small, slow, near village
   for(let i=0;i<5;i++){
     const a=Math.random()*Math.PI*2,d=0.04+Math.random()*0.12;
-    animals.push({type:'chicken',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0002,hp:8,state:'wander',timer:0,sz:0.002,col:'#c0a060',fleeRadius:0.025});
+    animals.push({type:'chicken',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0002,hp:8,state:'wander',timer:0,sz:0.004,col:'#c0a060',fleeRadius:0.025});
   }
   // Elephants — slow, large, roaming far
   for(let i=0;i<3;i++){
     const a=Math.random()*Math.PI*2,d=0.2+Math.random()*0.2;
-    animals.push({type:'elephant',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00015,hp:200,state:'wander',timer:0,sz:0.008,col:'#888',fleeRadius:0,dmg:30});
+    animals.push({type:'elephant',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00015,hp:200,state:'wander',timer:0,sz:0.016,col:'#888',fleeRadius:0,dmg:30});
   }
   // Lions — hunt villagers, lurk at edges
   for(let i=0;i<2;i++){
     const la=Math.random()*Math.PI*2,ld=0.25+Math.random()*0.1;
-    animals.push({type:'lion',x:0.5+Math.cos(la)*ld,y:0.5+Math.sin(la)*ld,tx:0,ty:0,speed:0.0008,hp:80,state:'prowl',timer:0,sz:0.005,col:'#c8a040',fleeRadius:0,dmg:30,huntRadius:0.08});
+    animals.push({type:'lion',x:0.5+Math.cos(la)*ld,y:0.5+Math.sin(la)*ld,tx:0,ty:0,speed:0.0008,hp:80,state:'prowl',timer:0,sz:0.01,col:'#c8a040',fleeRadius:0,dmg:30,huntRadius:0.08});
   }
   // Crocodile — lurks in river far from village, patrols along river
   {const idx=Math.random()<0.5?Math.floor(Math.random()*15):Math.floor(85+Math.random()*16);
   const rp=riverPts[clamp(idx,0,riverPts.length-1)];
-  if(rp)animals.push({type:'croc',x:rp.x+(Math.random()-0.5)*0.01,y:rp.y+(Math.random()-0.5)*0.005,tx:rp.x,ty:rp.y,speed:0.0003,hp:60,state:'lurk',timer:0,sz:0.005,col:'#4a6a30',fleeRadius:0,dmg:40,huntRadius:0.03,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});}
+  if(rp)animals.push({type:'croc',x:rp.x+(Math.random()-0.5)*0.01,y:rp.y+(Math.random()-0.5)*0.005,tx:rp.x,ty:rp.y,speed:0.0003,hp:60,state:'lurk',timer:0,sz:0.01,col:'#4a6a30',fleeRadius:0,dmg:40,huntRadius:0.03,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});}
   // Hippo — territorial in river far from village, roams along river
   {const idx=Math.random()<0.5?Math.floor(Math.random()*12):Math.floor(88+Math.random()*13);
   const rp=riverPts[clamp(idx,0,riverPts.length-1)];
-  if(rp)animals.push({type:'hippo',x:rp.x+(Math.random()-0.5)*0.008,y:rp.y+(Math.random()-0.5)*0.004,tx:rp.x,ty:rp.y,speed:0.0004,hp:150,state:'wallow',timer:0,sz:0.007,col:'#6a5a5a',fleeRadius:0,dmg:25,huntRadius:0.02,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});}
+  if(rp)animals.push({type:'hippo',x:rp.x+(Math.random()-0.5)*0.008,y:rp.y+(Math.random()-0.5)*0.004,tx:rp.x,ty:rp.y,speed:0.0004,hp:150,state:'wallow',timer:0,sz:0.014,col:'#6a5a5a',fleeRadius:0,dmg:25,huntRadius:0.02,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});}
 }
 
 function updateAnimals(){
@@ -629,36 +629,36 @@ function updateAnimals(){
   // Respawn animals occasionally
   if(tick%2000<speed&&animals.filter(a=>a.type==='antelope').length<3){
     const a=Math.random()*Math.PI*2,d=0.2;
-    animals.push({type:'antelope',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00045,hp:30,state:'wander',timer:0,sz:0.004,col:'#c08040',fleeRadius:0.05});
+    animals.push({type:'antelope',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00045,hp:30,state:'wander',timer:0,sz:0.008,col:'#c08040',fleeRadius:0.05});
   }
   if(tick%1500<speed&&animals.filter(a=>a.type==='rabbit').length<3){
     const a=Math.random()*Math.PI*2,d=0.1+Math.random()*0.15;
-    animals.push({type:'rabbit',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0005,hp:10,state:'wander',timer:0,sz:0.0025,col:'#a08060',fleeRadius:0.04});
+    animals.push({type:'rabbit',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0005,hp:10,state:'wander',timer:0,sz:0.005,col:'#a08060',fleeRadius:0.04});
   }
   if(tick%2500<speed&&animals.filter(a=>a.type==='ostrich').length<2){
     const a=Math.random()*Math.PI*2,d=0.15+Math.random()*0.2;
-    animals.push({type:'ostrich',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00055,hp:20,state:'wander',timer:0,sz:0.005,col:'#3a3a3a',fleeRadius:0.06});
+    animals.push({type:'ostrich',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.00055,hp:20,state:'wander',timer:0,sz:0.01,col:'#3a3a3a',fleeRadius:0.06});
   }
   if(tick%1800<speed&&animals.filter(a=>a.type==='chicken').length<3){
     const a=Math.random()*Math.PI*2,d=0.05+Math.random()*0.1;
-    animals.push({type:'chicken',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0002,hp:8,state:'wander',timer:0,sz:0.002,col:'#c0a060',fleeRadius:0.025});
+    animals.push({type:'chicken',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0002,hp:8,state:'wander',timer:0,sz:0.004,col:'#c0a060',fleeRadius:0.025});
   }
   if(tick%5000<speed&&animals.filter(a=>a.type==='lion').length<1){
     const a=Math.random()*Math.PI*2,d=0.22;
-    animals.push({type:'lion',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0008,hp:80,state:'prowl',timer:0,sz:0.005,col:'#c8a040',fleeRadius:0,dmg:30,huntRadius:0.08});
+    animals.push({type:'lion',x:0.5+Math.cos(a)*d,y:0.5+Math.sin(a)*d,tx:0,ty:0,speed:0.0008,hp:80,state:'prowl',timer:0,sz:0.01,col:'#c8a040',fleeRadius:0,dmg:30,huntRadius:0.08});
     msg('A lion has been spotted near the village!','bad');
   }
   // Respawn croc (max 1) — far from village
   if(tick%8000<speed&&animals.filter(a=>a.type==='croc').length<1&&riverPts.length>0){
     const idx=Math.random()<0.5?Math.floor(Math.random()*15):Math.floor(85+Math.random()*16);
     const rp=riverPts[clamp(idx,0,riverPts.length-1)];
-    if(rp)animals.push({type:'croc',x:rp.x,y:rp.y,tx:rp.x,ty:rp.y,speed:0.0003,hp:60,state:'lurk',timer:0,sz:0.005,col:'#4a6a30',fleeRadius:0,dmg:40,huntRadius:0.03,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});
+    if(rp)animals.push({type:'croc',x:rp.x,y:rp.y,tx:rp.x,ty:rp.y,speed:0.0003,hp:60,state:'lurk',timer:0,sz:0.01,col:'#4a6a30',fleeRadius:0,dmg:40,huntRadius:0.03,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});
   }
   // Respawn hippo (max 1) — far from village
   if(tick%10000<speed&&animals.filter(a=>a.type==='hippo').length<1&&riverPts.length>0){
     const idx=Math.random()<0.5?Math.floor(Math.random()*12):Math.floor(88+Math.random()*13);
     const rp=riverPts[clamp(idx,0,riverPts.length-1)];
-    if(rp){animals.push({type:'hippo',x:rp.x,y:rp.y,tx:rp.x,ty:rp.y,speed:0.0004,hp:150,state:'wallow',timer:0,sz:0.007,col:'#6a5a5a',fleeRadius:0,dmg:25,huntRadius:0.02,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});
+    if(rp){animals.push({type:'hippo',x:rp.x,y:rp.y,tx:rp.x,ty:rp.y,speed:0.0004,hp:150,state:'wallow',timer:0,sz:0.014,col:'#6a5a5a',fleeRadius:0,dmg:25,huntRadius:0.02,_homeX:rp.x,_homeY:rp.y,_riverIdx:idx});
     msg('A hippo has settled in the river!','warn');}
   }
 }
